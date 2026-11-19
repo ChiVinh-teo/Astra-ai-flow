@@ -1,0 +1,6 @@
+{
+  "name": "AstraFlow AI",
+  "description": "Gia sư AI tương tác tiếng Việt chuẩn Astra AI với lộ trình uốn lượn 11 dạng bài học, Gia sư Socratic 24/7 và khóa Kinh tế chính trị Mác - Lênin tích hợp sẵn.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

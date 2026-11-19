@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">AstraFlow AI</string>
+    <string name="tab_roadmap">Lộ trình</string>
+    <string name="tab_tutor">Gia sư AI</string>
+    <string name="tab_practice">Luyện tập</string>
+    <string name="tab_library">Kho tài liệu</string>
+    <string name="course_default_title">Kinh tế chính trị Mác - Lênin</string>
+    <string name="course_default_tag">LÝ LUẬN CHÍNH TRỊ · ĐẠI HỌC</string>
+    <string name="course_default_source">📄 Giáo trình Kinh tế chính trị Mác - Lênin (Bộ GD&amp;ĐT)</string>
+    <string name="remediation_toast">📌 Mình sẽ quay lại phần này vào cuối bài học nhé.</string>
+</resources>
