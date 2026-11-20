@@ -23,6 +23,150 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
+      - name: Auto-fix missing keystore, drawables, and fonts
+        run: |
+          python3 - << 'EOF'
+          import os, re, glob, math, struct, zlib, shutil, subprocess, urllib.request, urllib.parse
+
+          # 1. Fix missing debug.keystore & debugConfig signing
+          gradle_path = "app/build.gradle.kts"
+          if os.path.exists(gradle_path):
+              txt = open(gradle_path, encoding="utf-8").read()
+              m_sp = re.search(r'storePassword\s*=\s*"([^"]+)"', txt)
+              m_ka = re.search(r'keyAlias\s*=\s*"([^"]+)"', txt)
+              m_kp = re.search(r'keyPassword\s*=\s*"([^"]+)"', txt)
+              sp = m_sp.group(1) if m_sp else "android"
+              ka = m_ka.group(1) if m_ka else "androiddebugkey"
+              kp = m_kp.group(1) if m_kp else "android"
+              if not os.path.exists("debug.keystore"):
+                  subprocess.run([
+                      "keytool", "-genkeypair", "-v",
+                      "-keystore", "debug.keystore",
+                      "-storepass", sp, "-alias", ka, "-keypass", kp,
+                      "-keyalg", "RSA", "-keysize", "2048", "-validity", "10000",
+                      "-dname", "CN=Android Debug,O=Android,C=US"
+                  ], check=False)
+              new_txt = re.sub(
+                  r'signingConfigs\.(?:getByName|findByName)\(["\']debugConfig["\']\)',
+                  'signingConfigs.getByName("debug")',
+                  txt
+              )
+              new_txt = new_txt.replace('signingConfigs["debugConfig"]', 'signingConfigs.getByName("debug")')
+              if new_txt != txt:
+                  open(gradle_path, "w", encoding="utf-8").write(new_txt)
+
+          # 2. Generate PNG assets for missing drawables
+          def write_png(path, is_buddy=False):
+              w = h = 256
+              cx = cy = w / 2.0
+              rows = []
+              for y in range(h):
+                  row = bytearray([0])
+                  for x in range(w):
+                      dx, dy = (x - cx) / 110.0, (y - cy) / 110.0
+                      d = math.hypot(dx, dy)
+                      r, g, b, a = 11, 14, 23, 255
+                      if is_buddy:
+                          if d < 0.92:
+                              r, g, b = 21, 26, 40
+                          if 0.86 <= d <= 0.94:
+                              r, g, b = 59, 130, 246
+                          if math.hypot(dx + 0.42, dy + 0.32) < 0.25 or math.hypot(dx - 0.42, dy + 0.32) < 0.25:
+                              r, g, b = 217, 119, 6
+                          if math.hypot(dx, dy - 0.05) < 0.52:
+                              r, g, b = 251, 191, 36
+                          if math.hypot(dx + 0.18, dy + 0.04) < 0.07 or math.hypot(dx - 0.18, dy + 0.04) < 0.07 or math.hypot(dx, dy - 0.14) < 0.08:
+                              r, g, b = 15, 23, 42
+                      else:
+                          star = (abs(dx) ** 0.65) + (abs(dy) ** 0.65)
+                          if star < 0.85:
+                              t = min(1.0, d)
+                              r = int(59 + 80 * t)
+                              g = int(130 - 38 * t)
+                              b = 246
+                          elif d < 0.95:
+                              r, g, b = 21, 26, 40
+                      row.extend((r, g, b, a))
+                  rows.append(bytes(row))
+              raw = b"".join(rows)
+              def chunk(tag, data):
+                  return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff)
+              ihdr = struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0)
+              png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b"")
+              open(path, "wb").write(png)
+
+          draw_dir = "app/src/main/res/drawable"
+          os.makedirs(draw_dir, exist_ok=True)
+          existing = {os.path.splitext(os.path.basename(p))[0] for p in glob.glob("app/src/main/res/drawable*/*")}
+          needed = {"ic_astraflow_logo_1795110758976", "img_astra_buddy_1795110821331"}
+          for f in glob.glob("app/src/main/**/*.*", recursive=True):
+              if f.endswith((".kt", ".xml")):
+                  c = open(f, encoding="utf-8", errors="ignore").read()
+                  needed.update(re.findall(r'(?:R\.drawable\.|@drawable/)((?:img_|ic_astraflow_)[a-z0-9_]+)', c))
+          for name in sorted(needed - existing):
+              dst = os.path.join(draw_dir, f"{name}.png")
+              write_png(dst, is_buddy=("buddy" in name))
+              print("Generated PNG:", dst)
+
+          # 3. Download missing Google Fonts referenced via R.font.*
+          font_dir = "app/src/main/res/font"
+          os.makedirs(font_dir, exist_ok=True)
+          font_refs = set()
+          for kt in glob.glob("app/src/main/java/**/*.kt", recursive=True):
+              font_refs.update(re.findall(r'R\.font\.([a-z0-9_]+)', open(kt, encoding="utf-8", errors="ignore").read()))
+
+          sys_ttfs = glob.glob("/usr/share/fonts/**/*.ttf", recursive=True)
+          fallback_ttf = sys_ttfs[0] if sys_ttfs else None
+          cache = {}
+
+          def fetch_font(name):
+              if "jakarta" in name:
+                  fam = "Plus Jakarta Sans"
+              elif "jetbrains" in name or "mono" in name:
+                  fam = "JetBrains Mono"
+              else:
+                  fam = "Be Vietnam Pro"
+              if "extrabold" in name or "extra_bold" in name:
+                  w = "800"
+              elif "semibold" in name or "semi_bold" in name:
+                  w = "600"
+              elif "bold" in name:
+                  w = "700"
+              elif "medium" in name:
+                  w = "500"
+              elif "light" in name:
+                  w = "300"
+              else:
+                  w = "400"
+              key = (fam, w)
+              if key in cache:
+                  return cache[key]
+              try:
+                  url = f"https://fonts.googleapis.com/css2?family={urllib.parse.quote(fam)}:wght@{w}"
+                  req = urllib.request.Request(url, headers={"User-Agent": "curl/8.0"})
+                  css = urllib.request.urlopen(req, timeout=15).read().decode("utf-8", "ignore")
+                  urls = re.findall(r'https://fonts\.gstatic\.com/[^\s\)]+\.ttf', css)
+                  if urls:
+                      data = urllib.request.urlopen(urls[0], timeout=20).read()
+                      if len(data) > 5000:
+                          cache[key] = data
+                          return data
+              except Exception as e:
+                  print("Font fallback for", name, e)
+              return None
+
+          for fname in sorted(font_refs):
+              dst = os.path.join(font_dir, f"{fname}.ttf")
+              if not os.path.exists(dst):
+                  data = fetch_font(fname)
+                  if data:
+                      open(dst, "wb").write(data)
+                      print("Downloaded font:", dst)
+                  elif fallback_ttf:
+                      shutil.copy(fallback_ttf, dst)
+                      print("Copied fallback font:", dst)
+          EOF
+
       - name: Build Debug APK
         run: gradle assembleDebug
 
