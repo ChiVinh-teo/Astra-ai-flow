@@ -70,7 +70,6 @@ class MainActivity : ComponentActivity() {
                 tutorVm.attachRepository(mainVm.repository, currentCourse)
             }
 
-            // Sync edge-to-edge system bar icon polarity with Cosmic Dark vs White-Paper Exam theme
             LaunchedEffect(settings.isWhitePaperExam) {
                 enableEdgeToEdge(
                     statusBarStyle = if (settings.isWhitePaperExam) {
@@ -324,4 +323,7 @@ class MainActivity : ComponentActivity() {
                                                 onOpenKnowledgeGaps = { mainVm.openMode(LearningMode.KNOWLEDGE_GAPS) }
                                             )
                                         }
-          
+                                    }
+                                }
+                            }
+         
